@@ -4,7 +4,7 @@ Rember to read what you are installing in your system! What could work for me ma
 
 # Module used
   - Terminal-Icons
-  - zoxide
+  - zoxide (need fzf installed)
   - Chocolatey
   - oh-my-posh / starship (default)
 
