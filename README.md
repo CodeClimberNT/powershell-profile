@@ -1,6 +1,6 @@
 # powershell-profile
 The profile was initially forked from: https://github.com/ChrisTitusTech/powershell-profile
-
+Rember to read what you are installing in your system! What could work for me may break other system if you don't know what you're doing!
 
 # Module used
   - Terminal-Icons
