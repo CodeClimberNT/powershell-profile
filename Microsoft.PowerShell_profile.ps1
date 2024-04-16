@@ -221,6 +221,6 @@ Invoke-Expression (& { (zoxide init powershell | Out-String) })
 
 # too slow for use D:
 ## visual process
-# oh-my-posh init pwsh --config "C://Users//nickt//Documents//Powershell//powerlevel10k_rainbow.omp.json" | Invoke-Expression
+# oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
 
 Invoke-Expression (&starship init powershell)
