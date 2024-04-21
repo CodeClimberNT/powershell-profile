@@ -218,9 +218,13 @@ if (Test-Path($ChocolateyProfile)) {
 
 Invoke-Expression (& { (zoxide init powershell | Out-String) })
 
+
 # Finalize the terminal with cool visual
 
 # too slow for use D:
 # oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
 
 Invoke-Expression (&starship init powershell)
+
+# make sure zoxide initialized as last module
+Invoke-Expression (& { (zoxide init powershell | Out-String) })
