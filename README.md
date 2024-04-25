@@ -8,10 +8,10 @@ Rember to read what you are installing in your system! What could work for me ma
   - Chocolatey
   - oh-my-posh / starship (default)
 
-# Installation of Module
-`Install-Module <Module-Name>`
+# Installation of Modules
+- for the `Terminal-Icons` use `Install-Module Terminal-Icons`
+- for the other use winget or cargo
 
 ## Attention
-The method above must not be used for `Chocolatey` and `starship`.
-
-Those can be installed from their respective source (winget and cargo or others, google it if you want them, or remove it from the profile)
+Use google and your brain to create your ideal personal space, you can use this profile as it is 
+but it is meant to be a start from which you can create you very personal environment that make you feel comfortable when using the terminal
