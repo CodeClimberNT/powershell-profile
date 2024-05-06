@@ -9,8 +9,9 @@ Rember to read what you are installing in your system! What could work for me ma
   - oh-my-posh / starship (default)
 
 # Installation of Modules
-- for the `Terminal-Icons` use `Install-Module Terminal-Icons`
-- for the other use winget or cargo
+All the modules except `startship` should download automatically if not installed and if a connection to the internet is detected
+
+To download `startship` follow the [Official Documentation](https://starship.rs/installing), tipically the download should be done with a simple command in the terminal
 
 ## Attention
 Use google and your brain to create your ideal personal space, you can use this profile as it is 
