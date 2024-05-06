@@ -17,5 +17,5 @@ To download `startship` follow the [Official Documentation](https://starship.rs/
 Use google and your brain to create your ideal personal space, you can use this profile as it is 
 but it is meant to be a start from which you can create you very personal environment that make you feel comfortable when using the terminal.
 
-## How to use
+## Tips
 By default the update function for the profile and the powershell are not called automatically as they increase the powershell startup time. This time is very dependent on the machine, my recommendation is to decomment the line below the function definition to make the function autocall and see for yourself if the time it takes to startup a new instance fit your needs or not.
