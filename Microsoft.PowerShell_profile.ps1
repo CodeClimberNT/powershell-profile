@@ -16,13 +16,7 @@
 # Initial GitHub.com connectivity check with 1 second timeout
 $canConnectToGitHub = Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
 
-# Import Modules and External Profiles
-# Ensure Terminal-Icons module is installed before importing
-if (Get-Module -ListAvailable -Name Terminal-Icons){
-    Import-Module -Name Terminal-Icons
-} elseif (-not (Get-Module -ListAvailable -Name Terminal-Icons) -and $canConnectToGitHub ) {
-    Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
-}
+
 
 
 $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
@@ -124,8 +118,18 @@ Set-Alias -Name vim -Value $EDITOR
 
 Set-Alias -Name n -Value notepad
 
+$FETCH = if (Test-CommandExists neofetch) { 'neofetch' }
+        elseif (Test-CommandExists fastfetch) { 'fastfetch' }
+Set-Alias -Name neofetch -Value $FETCH
+
+
 function Edit-Profile {
-    vim $PROFILE.CurrentUserAllHosts
+    vim $PROFILE
+}
+
+# Seems to be broken
+function reload-profile {
+    & $PROFILE
 }
 
 function touch($file) { "" | Out-File $file -Encoding ASCII }
@@ -147,9 +151,6 @@ function uptime {
     }
 }
 
-function reload-profile {
-    & $profile
-}
 
 function unzip ($file) {
     Write-Output("Extracting", $file, "to", $pwd)
@@ -269,10 +270,34 @@ Set-PSReadLineOption -Colors @{
 
 # too slow for me to use D:
 # oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
-
 Invoke-Expression (&starship init powershell)
 
-# make sure zoxide imported after starship or oh-my-posh
+# import modules after starship or oh-my-posh to avoid visual bugs
+
+# Import Modules and External Profiles
+# Ensure Terminal-Icons module is installed before importing
+if (Get-Module -ListAvailable -Name Terminal-Icons){
+    Import-Module -Name Terminal-Icons
+} elseif (-not (Get-Module -ListAvailable -Name Terminal-Icons) -and $canConnectToGitHub ) {
+    Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
+    Import-Module -Name Terminal-Icons
+}
+
+
+if (Get-Module -ListAvailable -Name PSCompletions){
+    Import-Module -Name PSCompletions
+} elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
+    Install-Module -Name PSCompletions -Scope CurrentUser -Force -SkipPublisherCheck
+    Import-Module -Name PSCompletions
+    Write-Host "PSCompletions module installed. To use more completions, run Add-Completions"
+    Write-Host "This message will not appear again, unless you remove the module."
+}
+
+function Add-Completions{
+    psc add cargo choco docker git npm pip python scoop winget wsl
+}
+
+
 # if zoxide not installed try to install it
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (zoxide init powershell | Out-String) })
