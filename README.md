@@ -3,13 +3,14 @@ The profile was initially forked from [this](https://github.com/ChrisTitusTech/p
 Rember to read what you are installing in your system! What could work for me may break other system if you don't know what you're doing!
 
 # Module used
-  - Terminal-Icons
-  - zoxide (need fzf installed for advanced features)
-  - Chocolatey
-  - oh-my-posh / starship (default)
+  - [Terminal-Icons](https://github.com/devblackops/Terminal-Icons)
+  - [PSCompletions](https://github.com/abgox/PSCompletions)
+  - [zoxide](https://github.com/ajeetdsouza/zoxide) (need [fzf](https://github.com/junegunn/fzf) installed for advanced features)
+  - [Chocolatey](https://chocolatey.org/)
+  - [oh-my-posh](https://ohmyposh.dev/) / [starship](https://starship.rs/) (default)
 
 # Installation of Modules
-All the modules except `startship` should download automatically if not installed and if a connection to the internet is detected
+All the modules except for `startship` should be automatically downloaded if not installed and if a connection to the internet is detected
 
 To download `startship` follow the [Official Documentation](https://starship.rs/installing), tipically the download should be done with a simple command in the terminal
 
