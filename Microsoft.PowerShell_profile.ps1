@@ -48,11 +48,6 @@ function Update-Profile {
 }
 # Update-Profile
 
-function update-psc {
-    psc update *
-}
-# update-psc
-
 function Update-PowerShell {
     if (-not $global:canConnectToGitHub) {
         Write-Host "Skipping PowerShell update check due to GitHub.com not responding within 1 second." -ForegroundColor Yellow
@@ -82,6 +77,11 @@ function Update-PowerShell {
     }
 }
 # Update-PowerShell
+
+function update-psc {
+    psc update *
+}
+# update-psc
 
 # Set up command prompt and window title. Use UNIX-style convention for identifying 
 # whether user is elevated (root) or not. Window title shows current version of PowerShell
