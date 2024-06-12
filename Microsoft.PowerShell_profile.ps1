@@ -78,10 +78,7 @@ function Update-PowerShell {
 }
 # Update-PowerShell
 
-function update-psc {
-    psc update *
-}
-# update-psc
+
 
 # Set up command prompt and window title. Use UNIX-style convention for identifying 
 # whether user is elevated (root) or not. Window title shows current version of PowerShell
@@ -297,6 +294,11 @@ if (Get-Module -ListAvailable -Name PSCompletions){
     Write-Host "PSCompletions module installed. To use more completions, run Add-Completions"
     Write-Host "This message will not appear again, unless you remove the module."
 }
+
+function update-psc {
+    psc update *
+}
+# update-psc
 
 function Add-Completions{
     psc add cargo choco docker git npm pip python scoop winget wsl
