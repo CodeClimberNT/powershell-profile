@@ -40,9 +40,11 @@ function Update-Profile {
             Copy-Item -Path "$env:temp/Microsoft.PowerShell_profile.ps1" -Destination $PROFILE -Force
             Write-Host "Profile has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
         }
-    } catch {
+    }
+    catch {
         Write-Error "Unable to check for `$profile updates"
-    } finally {
+    }
+    finally {
         Remove-Item "$env:temp/Microsoft.PowerShell_profile.ps1" -ErrorAction SilentlyContinue
     }
 }
@@ -69,10 +71,12 @@ function Update-PowerShell {
             Write-Host "Updating PowerShell..." -ForegroundColor Yellow
             winget upgrade "Microsoft.PowerShell" --accept-source-agreements --accept-package-agreements
             Write-Host "PowerShell has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
-        } else {
+        }
+        else {
             Write-Host "Your PowerShell is up to date." -ForegroundColor Green
         }
-    } catch {
+    }
+    catch {
         Write-Error "Failed to update PowerShell. Error: $_"
     }
 }
@@ -86,7 +90,8 @@ function Update-PowerShell {
 function prompt { 
     if ($isAdmin) {
         "[" + (Get-Location) + "] # " 
-    } else {
+    }
+    else {
         "[" + (Get-Location) + "] $ "
     }
 }
@@ -109,19 +114,19 @@ function Test-CommandExists {
 
 # Editor Configuration
 $EDITOR = if (Test-CommandExists nvim) { 'nvim' }
-          elseif (Test-CommandExists pvim) { 'pvim' }
-          elseif (Test-CommandExists vim) { 'vim' }
-          elseif (Test-CommandExists vi) { 'vi' }
-          elseif (Test-CommandExists code) { 'code' }
-          elseif (Test-CommandExists notepad++) { 'notepad++' }
-          elseif (Test-CommandExists sublime_text) { 'sublime_text' }
-          else { 'notepad' }
+elseif (Test-CommandExists pvim) { 'pvim' }
+elseif (Test-CommandExists vim) { 'vim' }
+elseif (Test-CommandExists vi) { 'vi' }
+elseif (Test-CommandExists code) { 'code' }
+elseif (Test-CommandExists notepad++) { 'notepad++' }
+elseif (Test-CommandExists sublime_text) { 'sublime_text' }
+else { 'notepad' }
 Set-Alias -Name vim -Value $EDITOR
 
 Set-Alias -Name n -Value notepad
 
 $FETCH = if (Test-CommandExists neofetch) { 'neofetch' }
-        elseif (Test-CommandExists fastfetch) { 'fastfetch' }
+elseif (Test-CommandExists fastfetch) { 'fastfetch' }
 Set-Alias -Name neofetch -Value $FETCH
 
 
@@ -147,8 +152,9 @@ function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
 # System Utilities
 function uptime {
     if ($PSVersionTable.PSVersion.Major -eq 5) {
-        Get-WmiObject win32_operatingsystem | Select-Object @{Name='LastBootUpTime'; Expression={$_.ConverttoDateTime($_.lastbootuptime)}} | Format-Table -HideTableHeaders
-    } else {
+        Get-WmiObject win32_operatingsystem | Select-Object @{Name = 'LastBootUpTime'; Expression = { $_.ConverttoDateTime($_.lastbootuptime) } } | Format-Table -HideTableHeaders
+    }
+    else {
         net statistics workstation | Select-String "since" | ForEach-Object { $_.ToString().Replace('Statistics since ', '') }
     }
 }
@@ -193,13 +199,13 @@ function pgrep($name) {
 }
 
 function head {
-  param($Path, $n = 10)
-  Get-Content $Path -Head $n
+    param($Path, $n = 10)
+    Get-Content $Path -Head $n
 }
 
 function tail {
-  param($Path, $n = 10)
-  Get-Content $Path -Tail $n
+    param($Path, $n = 10)
+    Get-Content $Path -Tail $n
 }
 
 # Quick File Creation
@@ -265,9 +271,9 @@ function sha256 { Get-FileHash -Algorithm SHA256 $args }
 
 # Enhanced PowerShell Experience
 Set-PSReadLineOption -Colors @{
-    Command = 'Yellow'
+    Command   = 'Yellow'
     Parameter = 'Green'
-    String = 'DarkCyan'
+    String    = 'DarkCyan'
 }
 
 # too slow for me to use D:
@@ -278,43 +284,58 @@ Invoke-Expression (&starship init powershell)
 
 # Import Modules and External Profiles
 # Ensure Terminal-Icons module is installed before importing
-if (Get-Module -ListAvailable -Name Terminal-Icons){
+if (Get-Module -ListAvailable -Name Terminal-Icons) {
     Import-Module -Name Terminal-Icons
-} elseif (-not (Get-Module -ListAvailable -Name Terminal-Icons) -and $canConnectToGitHub ) {
+}
+elseif (-not (Get-Module -ListAvailable -Name Terminal-Icons) -and $canConnectToGitHub ) {
     Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
     Import-Module -Name Terminal-Icons
 }
 
 
-if (Get-Module -ListAvailable -Name PSCompletions){
+if (Get-Module -ListAvailable -Name PSCompletions) {
     Import-Module -Name PSCompletions
-} elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
+}
+elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
     Install-Module -Name PSCompletions -Scope CurrentUser -Force -SkipPublisherCheck
     Import-Module -Name PSCompletions
     Write-Host "PSCompletions module installed. To use more completions, run Add-Completions"
     Write-Host "This message will not appear again, unless you remove the module."
 }
 
-function update-psc {
-    psc update *
+if (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) {
+    Import-Module -Name Microsoft.WinGet.CommandNotFound
 }
-# update-psc
+elseif (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) -and $canConnectToGitHub ) {
+    Install-Module -Name Microsoft.WinGet.CommandNotFound -Scope CurrentUser -Force -SkipPublisherCheck
+    Import-Module -Name Microsoft.WinGet.CommandNotFound
+    Write-Host "CommandNotFound module installed. To use more completions, run Add-Completions"
+    Write-Host "This message will not appear again, unless you remove the module."
+}
 
-function Add-Completions{
+
+function Add-Completions {
     psc add cargo choco docker git npm pip python scoop winget wsl
 }
 
+function update-psc {
+    psc update *
+}
+# To update the psc modules at every session uncomment the line below
+# update-psc
 
 # if zoxide not installed try to install it
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (zoxide init powershell | Out-String) })
-} else {
+}
+else {
     Write-Host "zoxide command not found. Attempting to install via winget..."
     try {
         winget install -e --id ajeetdsouza.zoxide
         Write-Host "zoxide installed successfully. Initializing..."
         Invoke-Expression (& { (zoxide init powershell | Out-String) })
-    } catch {
+    }
+    catch {
         Write-Error "Failed to install zoxide. Error: $_"
     }
 }
