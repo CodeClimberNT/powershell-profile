@@ -1,6 +1,6 @@
 ### PowerShell template profile 
 ### Version 1.03 - Tim Sneath <tim@sneath.org>
-### From https://gist.github.com/timsneath/19867b12eee7fd5af2ba
+### From https://github.com/ChrisTitusTech/powershell-profile/blob/main/Microsoft.PowerShell_profile.ps1
 ###
 ### This file should be stored in $PROFILE.CurrentUserAllHosts
 ### If $PROFILE.CurrentUserAllHosts doesn't exist, you can make one with the following:
@@ -13,10 +13,14 @@
 ### This is the default policy on Windows Server 2012 R2 and above for server Windows. For 
 ### more information about execution policies, run Get-Help about_Execution_Policies.
 
+#opt-out of telemetry before doing anything, only if PowerShell is run as admin
+if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem) {
+    [System.Environment]::SetEnvironmentVariable('POWERSHELL_TELEMETRY_OPTOUT', 'true', [System.EnvironmentVariableTarget]::Machine)
+}
+
+
 # Initial GitHub.com connectivity check with 1 second timeout
 $canConnectToGitHub = Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
-
-
 
 
 $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
@@ -32,7 +36,7 @@ function Update-Profile {
     }
 
     try {
-        $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/main/Microsoft.PowerShell_profile.ps1"
+        $url = "https://raw.githubusercontent.com/ChrisTitusTech/powershell-profile/main/Microsoft.PowerShell_profile.ps1"
         $oldhash = Get-FileHash $PROFILE
         Invoke-RestMethod $url -OutFile "$env:temp/Microsoft.PowerShell_profile.ps1"
         $newhash = Get-FileHash "$env:temp/Microsoft.PowerShell_profile.ps1"
@@ -40,11 +44,9 @@ function Update-Profile {
             Copy-Item -Path "$env:temp/Microsoft.PowerShell_profile.ps1" -Destination $PROFILE -Force
             Write-Host "Profile has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
         }
-    }
-    catch {
+    } catch {
         Write-Error "Unable to check for `$profile updates"
-    }
-    finally {
+    } finally {
         Remove-Item "$env:temp/Microsoft.PowerShell_profile.ps1" -ErrorAction SilentlyContinue
     }
 }
@@ -71,30 +73,16 @@ function Update-PowerShell {
             Write-Host "Updating PowerShell..." -ForegroundColor Yellow
             winget upgrade "Microsoft.PowerShell" --accept-source-agreements --accept-package-agreements
             Write-Host "PowerShell has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
-        }
-        else {
+        } else {
             Write-Host "Your PowerShell is up to date." -ForegroundColor Green
         }
-    }
-    catch {
+    } catch {
         Write-Error "Failed to update PowerShell. Error: $_"
     }
 }
 # Update-PowerShell
 
 
-
-# Set up command prompt and window title. Use UNIX-style convention for identifying 
-# whether user is elevated (root) or not. Window title shows current version of PowerShell
-# and appends [ADMIN] if appropriate for easy taskbar identification
-function prompt { 
-    if ($isAdmin) {
-        "[" + (Get-Location) + "] # " 
-    }
-    else {
-        "[" + (Get-Location) + "] $ "
-    }
-}
 
 # Admin Check and Prompt Customization
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -114,15 +102,14 @@ function Test-CommandExists {
 
 # Editor Configuration
 $EDITOR = if (Test-CommandExists nvim) { 'nvim' }
-elseif (Test-CommandExists pvim) { 'pvim' }
-elseif (Test-CommandExists vim) { 'vim' }
-elseif (Test-CommandExists vi) { 'vi' }
-elseif (Test-CommandExists code) { 'code' }
-elseif (Test-CommandExists notepad++) { 'notepad++' }
-elseif (Test-CommandExists sublime_text) { 'sublime_text' }
-else { 'notepad' }
+          elseif (Test-CommandExists pvim) { 'pvim' }
+          elseif (Test-CommandExists vim) { 'vim' }
+          elseif (Test-CommandExists vi) { 'vi' }
+          elseif (Test-CommandExists code) { 'code' }
+          elseif (Test-CommandExists notepad++) { 'notepad++' }
+          elseif (Test-CommandExists sublime_text) { 'sublime_text' }
+          else { 'notepad' }
 Set-Alias -Name vim -Value $EDITOR
-
 Set-Alias -Name n -Value notepad
 
 $FETCH = if (Test-CommandExists neofetch) { 'neofetch' }
@@ -134,9 +121,8 @@ function Edit-Profile {
     vim $PROFILE
 }
 
-# Seems to be broken
 function reload-profile {
-    & $PROFILE
+    & $profile
 }
 
 function touch($file) { "" | Out-File $file -Encoding ASCII }
@@ -148,6 +134,25 @@ function ff($name) {
 
 # Network Utilities
 function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
+
+# Open WinUtil
+function winutil {
+	iwr -useb https://christitus.com/win | iex
+}
+
+# System Utilities
+function admin {
+    if ($args.Count -gt 0) {
+        $argList = "& '$args'"
+        Start-Process wt -Verb runAs -ArgumentList "pwsh.exe -NoExit -Command $argList"
+    } else {
+        Start-Process wt -Verb runAs
+    }
+}
+
+# Set UNIX-like aliases for the admin command, so sudo <command> will run the command with elevated rights.
+Set-Alias -Name su -Value admin
+
 
 # System Utilities
 function uptime {
@@ -256,7 +261,10 @@ function lazyg {
 function sysinfo { Get-ComputerInfo }
 
 # Networking Utilities
-function flushdns { Clear-DnsClientCache }
+function flushdns {
+	Clear-DnsClientCache
+	Write-Host "DNS has been flushed"
+}
 
 # Clipboard Utilities
 function cpy { Set-Clipboard $args[0] }
@@ -275,6 +283,19 @@ Set-PSReadLineOption -Colors @{
     Parameter = 'Green'
     String    = 'DarkCyan'
 }
+
+$PSROptions = @{
+    ContinuationPrompt = '  '
+    Colors             = @{
+    Parameter          = $PSStyle.Foreground.Magenta
+    Selection          = $PSStyle.Background.Black
+    InLinePrediction   = $PSStyle.Foreground.BrightYellow + $PSStyle.Background.BrightBlack
+    }
+}
+Set-PSReadLineOption @PSROptions
+Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
+Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
+
 
 # too slow for me to use D:
 # oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
@@ -339,3 +360,95 @@ else {
         Write-Error "Failed to install zoxide. Error: $_"
     }
 }
+
+Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
+Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
+
+# Help Function
+function Show-Help {
+    @"
+PowerShell Profile Help
+=======================
+
+Update-Profile - Checks for profile updates from a remote repository and updates if necessary.
+
+Update-PowerShell - Checks for the latest PowerShell release and updates if a new version is available.
+
+Edit-Profile - Opens the current user's profile for editing using the configured editor.
+
+touch <file> - Creates a new empty file.
+
+ff <name> - Finds files recursively with the specified name.
+
+Get-PubIP - Retrieves the public IP address of the machine.
+
+winutil - Runs the WinUtil script from Chris Titus Tech.
+
+uptime - Displays the system uptime.
+
+reload-profile - Reloads the current user's PowerShell profile.
+
+unzip <file> - Extracts a zip file to the current directory.
+
+hb <file> - Uploads the specified file's content to a hastebin-like service and returns the URL.
+
+grep <regex> [dir] - Searches for a regex pattern in files within the specified directory or from the pipeline input.
+
+df - Displays information about volumes.
+
+sed <file> <find> <replace> - Replaces text in a file.
+
+which <name> - Shows the path of the command.
+
+export <name> <value> - Sets an environment variable.
+
+pkill <name> - Kills processes by name.
+
+pgrep <name> - Lists processes by name.
+
+head <path> [n] - Displays the first n lines of a file (default 10).
+
+tail <path> [n] - Displays the last n lines of a file (default 10).
+
+nf <name> - Creates a new file with the specified name.
+
+mkcd <dir> - Creates and changes to a new directory.
+
+docs - Changes the current directory to the user's Documents folder.
+
+dtop - Changes the current directory to the user's Desktop folder.
+
+ep - Opens the profile for editing.
+
+k9 <name> - Kills a process by name.
+
+la - Lists all files in the current directory with detailed formatting.
+
+ll - Lists all files, including hidden, in the current directory with detailed formatting.
+
+gs - Shortcut for 'git status'.
+
+ga - Shortcut for 'git add .'.
+
+gc <message> - Shortcut for 'git commit -m'.
+
+gp - Shortcut for 'git push'.
+
+g - Changes to the GitHub directory.
+
+gcom <message> - Adds all changes and commits with the specified message.
+
+lazyg <message> - Adds all changes, commits with the specified message, and pushes to the remote repository.
+
+sysinfo - Displays detailed system information.
+
+flushdns - Clears the DNS cache.
+
+cpy <text> - Copies the specified text to the clipboard.
+
+pst - Retrieves text from the clipboard.
+
+Use 'Show-Help' to display this help message.
+"@
+}
+Write-Host "Use 'Show-Help' to display help"
