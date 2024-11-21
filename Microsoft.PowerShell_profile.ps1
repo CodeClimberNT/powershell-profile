@@ -121,7 +121,7 @@ function Edit-Profile {
     vim $PROFILE
 }
 
-function reload-profile {
+function Update-Profile {
     & $profile
 }
 
@@ -137,7 +137,8 @@ function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
 
 # Open WinUtil
 function winutil {
-	iwr -useb https://christitus.com/win | iex
+	Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression
+    
 }
 
 # System Utilities
@@ -152,7 +153,6 @@ function admin {
 
 # Set UNIX-like aliases for the admin command, so sudo <command> will run the command with elevated rights.
 Set-Alias -Name su -Value admin
-
 
 # System Utilities
 function uptime {
@@ -296,7 +296,7 @@ Set-PSReadLineOption @PSROptions
 Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
 
-
+Invoke-Expression (&sfsu hook)
 # too slow for me to use D:
 # oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
 Invoke-Expression (&starship init powershell)
@@ -333,17 +333,32 @@ elseif (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) 
     Write-Host "CommandNotFound module installed. To use more completions, run Add-Completions"
     Write-Host "This message will not appear again, unless you remove the module."
 }
-
+# Install pscx module if not already installed - https://github.com/Pscx/Pscx
+# if (Get-Module -ListAvailable -Name Pscx) {
+#     Import-Module -Name Pscx
+# }
+# elseif (-not (Get-Module -ListAvailable -Name Pscx) -and $canConnectToGitHub ) {
+#     Install-Module -Name Pscx -Scope CurrentUser -Force -SkipPublisherCheck -AllowClobber
+#     Import-Module -Name Pscx
+# }
 
 function Add-Completions {
-    psc add cargo choco docker git npm pip python scoop winget wsl
-}
+    psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl
+}       
 
 function update-psc {
     psc update *
 }
 # To update the psc modules at every session uncomment the line below
 # update-psc
+
+
+
+function update-pyenv {
+    Invoke-Expression(&{"${env:PYENV_HOME}\install-pyenv-win.ps1"})
+}
+# To update the pyenv at every session uncomment the line below
+# update-pyenv
 
 # if zoxide not installed try to install it
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
@@ -447,6 +462,10 @@ flushdns - Clears the DNS cache.
 cpy <text> - Copies the specified text to the clipboard.
 
 pst - Retrieves text from the clipboard.
+
+update-psc - Update the psc manually
+
+update-pyenv - Update pyenv installation
 
 Use 'Show-Help' to display this help message.
 "@
