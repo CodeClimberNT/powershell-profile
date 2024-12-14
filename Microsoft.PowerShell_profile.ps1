@@ -36,7 +36,7 @@ function Update-Profile {
     }
 
     try {
-        $url = "https://github.com/CodeClimberNT/powershell-profile/blob/main/Microsoft.PowerShell_profile.ps1"
+        $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
         $oldhash = Get-FileHash $PROFILE
         Invoke-RestMethod $url -OutFile "$env:temp/Microsoft.PowerShell_profile.ps1"
         $newhash = Get-FileHash "$env:temp/Microsoft.PowerShell_profile.ps1"
@@ -52,7 +52,7 @@ function Update-Profile {
         Remove-Item "$env:temp/Microsoft.PowerShell_profile.ps1" -ErrorAction SilentlyContinue
     }
 }
-# Update-Profile
+Update-Profile
 
 function Update-PowerShell {
     if (-not $global:canConnectToGitHub) {
@@ -84,7 +84,7 @@ function Update-PowerShell {
         Write-Error "Failed to update PowerShell. Error: $_"
     }
 }
-# Update-PowerShell
+Update-PowerShell
 
 
 # Admin Check and Prompt Customization
