@@ -36,7 +36,7 @@ function Update-Profile {
     }
 
     try {
-        $url = "https://raw.githubusercontent.com/ChrisTitusTech/powershell-profile/main/Microsoft.PowerShell_profile.ps1"
+        $url = "https://github.com/CodeClimberNT/powershell-profile/blob/main/Microsoft.PowerShell_profile.ps1"
         $oldhash = Get-FileHash $PROFILE
         Invoke-RestMethod $url -OutFile "$env:temp/Microsoft.PowerShell_profile.ps1"
         $newhash = Get-FileHash "$env:temp/Microsoft.PowerShell_profile.ps1"
@@ -44,9 +44,11 @@ function Update-Profile {
             Copy-Item -Path "$env:temp/Microsoft.PowerShell_profile.ps1" -Destination $PROFILE -Force
             Write-Host "Profile has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
         }
-    } catch {
+    }
+    catch {
         Write-Error "Unable to check for `$profile updates"
-    } finally {
+    }
+    finally {
         Remove-Item "$env:temp/Microsoft.PowerShell_profile.ps1" -ErrorAction SilentlyContinue
     }
 }
@@ -73,15 +75,16 @@ function Update-PowerShell {
             Write-Host "Updating PowerShell..." -ForegroundColor Yellow
             winget upgrade "Microsoft.PowerShell" --accept-source-agreements --accept-package-agreements
             Write-Host "PowerShell has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
-        } else {
+        }
+        else {
             Write-Host "Your PowerShell is up to date." -ForegroundColor Green
         }
-    } catch {
+    }
+    catch {
         Write-Error "Failed to update PowerShell. Error: $_"
     }
 }
 # Update-PowerShell
-
 
 
 # Admin Check and Prompt Customization
@@ -102,13 +105,13 @@ function Test-CommandExists {
 
 # Editor Configuration
 $EDITOR = if (Test-CommandExists nvim) { 'nvim' }
-          elseif (Test-CommandExists pvim) { 'pvim' }
-          elseif (Test-CommandExists vim) { 'vim' }
-          elseif (Test-CommandExists vi) { 'vi' }
-          elseif (Test-CommandExists code) { 'code' }
-          elseif (Test-CommandExists notepad++) { 'notepad++' }
-          elseif (Test-CommandExists sublime_text) { 'sublime_text' }
-          else { 'notepad' }
+elseif (Test-CommandExists pvim) { 'pvim' }
+elseif (Test-CommandExists vim) { 'vim' }
+elseif (Test-CommandExists vi) { 'vi' }
+elseif (Test-CommandExists code) { 'code' }
+elseif (Test-CommandExists notepad++) { 'notepad++' }
+elseif (Test-CommandExists sublime_text) { 'sublime_text' }
+else { 'notepad' }
 Set-Alias -Name vim -Value $EDITOR
 Set-Alias -Name n -Value notepad
 
@@ -137,7 +140,7 @@ function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
 
 # Open WinUtil
 function winutil {
-	Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression
+    Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression
     
 }
 
@@ -146,7 +149,8 @@ function admin {
     if ($args.Count -gt 0) {
         $argList = "& '$args'"
         Start-Process wt -Verb runAs -ArgumentList "pwsh.exe -NoExit -Command $argList"
-    } else {
+    }
+    else {
         Start-Process wt -Verb runAs
     }
 }
@@ -262,8 +266,8 @@ function sysinfo { Get-ComputerInfo }
 
 # Networking Utilities
 function flushdns {
-	Clear-DnsClientCache
-	Write-Host "DNS has been flushed"
+    Clear-DnsClientCache
+    Write-Host "DNS has been flushed"
 }
 
 # Clipboard Utilities
@@ -287,9 +291,9 @@ Set-PSReadLineOption -Colors @{
 $PSROptions = @{
     ContinuationPrompt = '  '
     Colors             = @{
-    Parameter          = $PSStyle.Foreground.Magenta
-    Selection          = $PSStyle.Background.Black
-    InLinePrediction   = $PSStyle.Foreground.BrightYellow + $PSStyle.Background.BrightBlack
+        Parameter        = $PSStyle.Foreground.Magenta
+        Selection        = $PSStyle.Background.Black
+        InLinePrediction = $PSStyle.Foreground.BrightYellow + $PSStyle.Background.BrightBlack
     }
 }
 Set-PSReadLineOption @PSROptions
@@ -314,16 +318,6 @@ elseif (-not (Get-Module -ListAvailable -Name Terminal-Icons) -and $canConnectTo
 }
 
 
-if (Get-Module -ListAvailable -Name PSCompletions) {
-    Import-Module -Name PSCompletions
-}
-elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
-    Install-Module -Name PSCompletions -Scope CurrentUser -Force -SkipPublisherCheck
-    Import-Module -Name PSCompletions
-    Write-Host "PSCompletions module installed. To use more completions, run Add-Completions"
-    Write-Host "This message will not appear again, unless you remove the module."
-}
-
 if (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) {
     Import-Module -Name Microsoft.WinGet.CommandNotFound
 }
@@ -331,7 +325,7 @@ elseif (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) 
     Install-Module -Name Microsoft.WinGet.CommandNotFound -Scope CurrentUser -Force -SkipPublisherCheck
     Import-Module -Name Microsoft.WinGet.CommandNotFound
     Write-Host "CommandNotFound module installed. To use more completions, run Add-Completions"
-    Write-Host "This message will not appear again, unless you remove the module."
+    Write-Host "This message will not appear again unless you reinstall the module."
 }
 # Install pscx module if not already installed - https://github.com/Pscx/Pscx
 # if (Get-Module -ListAvailable -Name Pscx) {
@@ -346,7 +340,7 @@ function Add-Completions {
     psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl
 }       
 
-function update-psc {
+function Update-Psc {
     psc update *
 }
 # To update the psc modules at every session uncomment the line below
@@ -354,11 +348,15 @@ function update-psc {
 
 
 
-function update-pyenv {
-    Invoke-Expression(&{"${env:PYENV_HOME}\install-pyenv-win.ps1"})
+function Update-Pyenv {
+    Invoke-Expression(& { "${env:PYENV_HOME}\install-pyenv-win.ps1" })
 }
 # To update the pyenv at every session uncomment the line below
 # update-pyenv
+
+# Set fnm to use the env from the current folder when opening it
+fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
+
 
 # if zoxide not installed try to install it
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
@@ -378,6 +376,17 @@ else {
 
 Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
 Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
+
+if (Get-Module -ListAvailable -Name PSCompletions) {
+    Import-Module -Name PSCompletions
+}
+elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
+    Install-Module -Name PSCompletions -Scope CurrentUser -Force -SkipPublisherCheck
+    Import-Module -Name PSCompletions
+    Write-Host "PSCompletions module installed. To use more completions, run Add-Completions"
+    Write-Host "This message will not appear again, unless you remove the module."
+}
+
 
 # Help Function
 function Show-Help {
@@ -463,9 +472,9 @@ cpy <text> - Copies the specified text to the clipboard.
 
 pst - Retrieves text from the clipboard.
 
-update-psc - Update the psc manually
+Update-Psc - Update the psc manually
 
-update-pyenv - Update pyenv installation
+Update-Pyenv - Update pyenv installation
 
 Use 'Show-Help' to display this help message.
 "@
