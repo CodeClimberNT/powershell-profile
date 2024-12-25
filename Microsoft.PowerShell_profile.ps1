@@ -296,14 +296,25 @@ $PSROptions = @{
         InLinePrediction = $PSStyle.Foreground.BrightYellow + $PSStyle.Background.BrightBlack
     }
 }
+
+if (Get-Command sfsu -ErrorAction SilentlyContinue) {
+    Invoke-Expression (&sfsu hook)
+}
+
 Set-PSReadLineOption @PSROptions
 Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
 
-Invoke-Expression (&sfsu hook)
-# too slow for me to use D:
-# oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
-Invoke-Expression (&starship init powershell)
+
+if (Get-Command starship -ErrorAction SilentlyContinue) {
+    Invoke-Expression (&starship init powershell)
+}
+elseif (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
+    oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
+}
+else {
+    Write-Host "Neither starship nor oh-my-posh is installed. Consider installing one for a better prompt experience." -ForegroundColor Yellow
+}
 
 # import modules after starship or oh-my-posh to avoid visual bugs
 
@@ -346,16 +357,30 @@ function Update-Psc {
 # To update the psc modules at every session uncomment the line below
 # update-psc
 
-
-
 function Update-Pyenv {
     Invoke-Expression(& { "${env:PYENV_HOME}\install-pyenv-win.ps1" })
 }
 # To update the pyenv at every session uncomment the line below
 # update-pyenv
 
-# Set fnm to use the env from the current folder when opening it
-fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
+function Clear-PSHistory {
+    # Get the path of the PSReadline history file
+    $historyPath = (Get-PSReadlineOption).HistorySavePath
+
+    # Check if the history file exists before attempting to delete
+    if (Test-Path -Path $historyPath) {
+        # Delete the history file
+        Remove-Item -Path $historyPath -Force
+        Write-Host "History cleared. Changes will take effect in new sessions."
+    } else {
+        Write-Host "No history file found at the specified path."
+    }
+}
+
+# Initialize fnm silently if it exists
+if (Get-Command fnm -ErrorAction SilentlyContinue) {
+    Invoke-Expression (fnm env --use-on-cd --shell powershell)
+}
 
 
 # if zoxide not installed try to install it
@@ -475,6 +500,8 @@ pst - Retrieves text from the clipboard.
 Update-Psc - Update the psc manually
 
 Update-Pyenv - Update pyenv installation
+
+Clear-PSHistory  - Clear PowerShell History (It will search the .txt history file and delete it)
 
 Use 'Show-Help' to display this help message.
 "@
