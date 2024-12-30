@@ -1,87 +1,222 @@
-### PowerShell template profile 
-### Version 1.03 - Tim Sneath <tim@sneath.org>
-### From https://github.com/ChrisTitusTech/powershell-profile/blob/main/Microsoft.PowerShell_profile.ps1
-###
-### This file should be stored in $PROFILE.CurrentUserAllHosts
-### If $PROFILE.CurrentUserAllHosts doesn't exist, you can make one with the following:
-###    PS> New-Item $PROFILE.CurrentUserAllHosts -ItemType File -Force
-### This will create the file and the containing subdirectory if it doesn't already 
-###
-### As a reminder, to enable unsigned script execution of local scripts on client Windows, 
-### you need to run this line (or similar) from an elevated PowerShell prompt:
-###   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned
-### This is the default policy on Windows Server 2012 R2 and above for server Windows. For 
-### more information about execution policies, run Get-Help about_Execution_Policies.
-
-#opt-out of telemetry before doing anything, only if PowerShell is run as admin
+#region Initial Setup
+# Telemetry opt-out, only if PowerShell is run as admin
 if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem) {
     [System.Environment]::SetEnvironmentVariable('POWERSHELL_TELEMETRY_OPTOUT', 'true', [System.EnvironmentVariableTarget]::Machine)
 }
 
+#region Script Variables
+$script:ToolCache = @{}
+$script:ModuleCache = @{}
+$script:ConfigurationComplete = $false
+$script:PendingJobs = @()
 
-# Initial connectivity check job
-$connectivityJob = Start-Job -ScriptBlock {
+#region Core Functions
+function Test-CommandExists {
+    param([string]$command)
+    if ($script:ToolCache.ContainsKey($command)) {
+        return $script:ToolCache[$command]
+    }
+    $exists = $null -ne (Get-Command $command -ErrorAction SilentlyContinue)
+    $script:ToolCache[$command] = $exists
+    return $exists
+}
+
+function Start-AsyncOperation {
+    param(
+        [scriptblock]$ScriptBlock,
+        [string]$Name
+    )
+    $job = Start-Job -Name $Name -ScriptBlock $ScriptBlock
+    $script:PendingJobs += @{
+        Job  = $job
+        Name = $Name
+    }
+}
+
+
+function Initialize-PSCompletions {
+    try {
+        # Check if already configured
+        if ($script:ModuleCache['PSCompletionsConfigured']) {
+            return $true
+        }
+
+        # Force module import first
+        Import-Module -Name PSCompletions -Force -ErrorAction Stop
+        Start-Sleep -Seconds 3  # Increase wait time for module to fully load
+
+        # Verify module is properly loaded
+        if (-not (Get-Module -Name PSCompletions)) {
+            Write-Warning "PSCompletions module failed to load"
+            return $false
+        }
+
+        # Verify psc command exists
+        if (-not (Get-Command 'psc' -ErrorAction SilentlyContinue)) {
+            Write-Warning "psc command not available after module import"
+            return $false
+        }
+
+        Write-Verbose "Configuring PSCompletions..."
+        # Use direct command execution without script block
+        Invoke-Expression "psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl"
+        Start-Sleep -Seconds 1
+        Invoke-Expression "psc menu config enable_menu 0"
+        
+        $script:ModuleCache['PSCompletionsConfigured'] = $true
+        return $true
+    }
+    catch {
+        Write-Warning "PSCompletions configuration failed: $_"
+        return $false
+    }
+}
+
+function Import-RequiredModules {
+    $modules = @(
+        @{
+            Name          = 'Terminal-Icons'
+            InstallParams = @{
+                Name               = 'Terminal-Icons'
+                Force              = $true
+                SkipPublisherCheck = $true
+            }
+        },
+        @{
+            Name          = 'PSCompletions'
+            InstallParams = @{
+                Name               = 'PSCompletions'
+                Force              = $true
+                SkipPublisherCheck = $true
+                Scope              = 'CurrentUser'
+            }
+        },
+        @{
+            Name          = 'Microsoft.WinGet.CommandNotFound'
+            InstallParams = @{
+                Name               = 'Microsoft.WinGet.CommandNotFound'
+                Force              = $true
+                SkipPublisherCheck = $true
+            }
+        }
+    )
+    
+    foreach ($module in $modules) {
+        try {
+            # Install if needed
+            if (-not (Get-Module -ListAvailable -Name $module.Name)) {
+                Write-Verbose "Installing module: $($module.Name)"
+                $params = $module.InstallParams
+                Install-Module @params
+                Start-Sleep -Seconds 2
+            }
+
+            # Import module
+            Import-Module -Name $module.Name -Force -ErrorAction Stop
+            $script:ModuleCache[$module.Name] = $true
+            Write-Verbose "Module $($module.Name) imported successfully"
+
+            # Handle PSCompletions setup
+            if ($module.Name -eq 'PSCompletions') {
+                Start-Sleep -Seconds 2
+                $retryCount = 1
+                $success = $false
+                
+                for ($i = 1; $i -le $retryCount -and -not $success; $i++) {
+                    Write-Verbose "Attempting to initialize PSCompletions (Attempt $i of $retryCount)"
+                    $success = Initialize-PSCompletions
+                    if (-not $success) {
+                        Start-Sleep -Seconds 2
+                    }
+                }
+            }
+        }
+        catch {
+            Write-Warning "Failed to process module $($module.Name): $_"
+        }
+    }
+}
+
+
+
+#region Shell Enhancements
+function Initialize-ShellEnhancements {
+    $tools = @(
+        @{Name = 'starship'; Init = { Invoke-Expression (&starship init powershell) } },
+        @{Name = 'zoxide'; Init = { 
+                if (Test-CommandExists 'zoxide') {
+                    Invoke-Expression (& { (zoxide init powershell | Out-String) })
+                    # Add proper null checks and error handling for zoxide aliases
+                    $zoxide_z = Get-Command __zoxide_z -ErrorAction SilentlyContinue
+                    $zoxide_zi = Get-Command __zoxide_zi -ErrorAction SilentlyContinue
+                    
+                    if ($zoxide_z) {
+                        New-Alias -Name 'z' -Value $zoxide_z.Name -ErrorAction SilentlyContinue -Force
+                    }
+                    if ($zoxide_zi) {
+                        New-Alias -Name 'zi' -Value $zoxide_zi.Name -ErrorAction SilentlyContinue -Force
+                    }
+                }
+            }
+        },
+        @{Name = 'fnm'; Init = { 
+                if (Test-CommandExists 'fnm') {
+                    fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression 
+                }
+            }
+        }
+    )
+
+    foreach ($tool in $tools) {
+        if (-not [string]::IsNullOrWhiteSpace($tool.Name) -and (Test-CommandExists $tool.Name)) {
+            try {
+                & $tool.Init
+            }
+            catch {
+                Write-Warning "Failed to initialize $($tool.Name): $_"
+            }
+        }
+    }
+}
+
+#region Initialization Flow
+Import-RequiredModules
+
+Start-AsyncOperation -Name "ConnectivityCheck" -ScriptBlock {
     Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
 }
 
-# Module installation job
-$moduleInstallJob = Start-Job -ScriptBlock {
-    $modules = @(
-        'Terminal-Icons',
-        'PSCompletions',
-        'Microsoft.WinGet.CommandNotFound'
-    )
-    
-    $newlyInstalled = @()
-    
-    foreach ($module in $modules) {
-        if (-not (Get-Module -ListAvailable -Name $module)) {
-            Install-Module -Name $module -Scope CurrentUser -Force -SkipPublisherCheck
-            $newlyInstalled += $module
-        }
-        # Import module regardless of whether it was just installed
-        Import-Module -Name $module -Force
-    }
-
-    # Special handling for PSCompletions if newly installed
-    if ($newlyInstalled -contains 'PSCompletions') {
-        # Run first-time setup commands
-        Add-Completions
-        Invoke-Expression "psc menu config enable_menu 0"
-    }
-
-    # Return the list of newly installed modules
-    $newlyInstalled
-}
-
-# Updates check job
-$updateCheckJob = Start-Job -ScriptBlock {
-    # Profile update check
-    $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
+Start-AsyncOperation -Name "UpdateCheck" -ScriptBlock {
     try {
+        $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
         $oldhash = Get-FileHash $PROFILE
-        Invoke-RestMethod $url -OutFile "$env:temp/Microsoft.PowerShell_profile.ps1"
-        $newhash = Get-FileHash "$env:temp/Microsoft.PowerShell_profile.ps1"
+        $newContent = Invoke-RestMethod $url
+        $tempFile = [System.IO.Path]::GetTempFileName()
+        $newContent | Set-Content $tempFile
+        $newhash = Get-FileHash $tempFile
+        Remove-Item $tempFile
         if ($newhash.Hash -ne $oldhash.Hash) {
-            Write-Output "Profile update available"
+            return "Profile update available"
         }
-    } catch { }
+    }
+    catch {}
     
-    # PowerShell update check
     try {
         $currentVersion = $PSVersionTable.PSVersion.ToString()
-        $latestVersion = (Invoke-RestMethod -Uri "https://api.github.com/repos/PowerShell/PowerShell/releases/latest").tag_name.Trim('v')
+        $latestVersion = (Invoke-RestMethod "https://api.github.com/repos/PowerShell/PowerShell/releases/latest").tag_name.Trim('v')
         if ($currentVersion -lt $latestVersion) {
-            Write-Output "PowerShell update available"
+            return "PowerShell update available"
         }
-    } catch { }
+    }
+    catch {}
 }
 
-# Wait for critical jobs
-$canConnectToGitHub = Receive-Job -Job $connectivityJob -Wait
-Remove-Job $connectivityJob
+
+# Initialize shell enhancements immediately for available tools
+Initialize-ShellEnhancements
 
 
+#region Configuration
 # Admin Check and Prompt Customization
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 function prompt {
@@ -90,54 +225,77 @@ function prompt {
 $adminSuffix = if ($isAdmin) { " [ADMIN]" } else { "" }
 $Host.UI.RawUI.WindowTitle = "PowerShell {0}$adminSuffix" -f $PSVersionTable.PSVersion.ToString()
 
-
-# Utility Functions
-function Test-CommandExists {
-    param($command)
-    $exists = $null -ne (Get-Command $command -ErrorAction SilentlyContinue)
-    return $exists
+# Shell Configuration
+$PSROptions = @{
+    ContinuationPrompt = '  '
+    Colors             = @{
+        Parameter        = $PSStyle.Foreground.Magenta
+        Selection        = $PSStyle.Background.Black
+        InLinePrediction = $PSStyle.Foreground.BrightYellow + $PSStyle.Background.BrightBlack
+    }
 }
+Set-PSReadLineOption @PSROptions
+Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
+Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
 
 # Editor Configuration
-$EDITOR = if (Test-CommandExists nvim) { 'nvim' }
-elseif (Test-CommandExists pvim) { 'pvim' }
-elseif (Test-CommandExists vim) { 'vim' }
-elseif (Test-CommandExists vi) { 'vi' }
-elseif (Test-CommandExists code) { 'code' }
+$EDITOR = if (Test-CommandExists code) { 'code' }
+elseif (Test-CommandExists nvim) { 'nvim' }
 elseif (Test-CommandExists notepad++) { 'notepad++' }
 elseif (Test-CommandExists sublime_text) { 'sublime_text' }
 else { 'notepad' }
-Set-Alias -Name vim -Value $EDITOR
-Set-Alias -Name n -Value notepad
 
-$FETCH = if (Test-CommandExists neofetch) { 'neofetch' }
-elseif (Test-CommandExists fastfetch) { 'fastfetch' }
-Set-Alias -Name neofetch -Value $FETCH
-
-
-function Edit-Profile {
-    vim $PROFILE
+if (-not [string]::IsNullOrWhiteSpace($EDITOR)) {
+    Set-Alias -Name vim -Value $EDITOR -ErrorAction SilentlyContinue
 }
 
-function Update-Profile {
-    & $profile
+
+#region Tool Installation and Updates
+function Install-RequiredTools {
+    param([bool]$hasInternet)
+    if (-not $hasInternet) { return }
+
+    $toolsToInstall = @(
+        @{Name = 'zoxide'; WinGetId = 'ajeetdsouza.zoxide' },
+        @{Name = 'fzf'; WinGetId = 'junegunn.fzf' },
+        @{Name = 'starship'; WinGetId = 'Starship.Starship' }
+    )
+
+    foreach ($tool in $toolsToInstall) {
+        if (-not (Test-CommandExists $tool.Name)) {
+            Write-Host "Installing $($tool.Name)..."
+            winget install --silent --exact --id $tool.WinGetId --accept-source-agreements
+        }
+    }
 }
+
+if (Get-Command sfsu -ErrorAction SilentlyContinue) {
+    Invoke-Expression (&sfsu hook)
+}
+
+
+#region Aliases
+$FETCH = if (Test-CommandExists fastfetch) { 'fastfetch' }
+if (-not [string]::IsNullOrWhiteSpace($FETCH)) {
+    Set-Alias -Name neofetch -Value $FETCH -ErrorAction SilentlyContinue
+}
+
+#region Utility Functions
+# Profile Management
+function Edit-Profile { vim $PROFILE }
+function Update-Profile { & $PROFILE }
 
 function touch($file) { "" | Out-File $file -Encoding ASCII }
 function ff($name) {
-    Get-ChildItem -recurse -filter "*${name}*" -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-ChildItem -Recurse -Filter "*${name}*" -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Output "$($_.directory)\$($_)"
     }
 }
 
-# Network Utilities
-function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
 
-# Open WinUtil
-function winutil {
-    Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression
-    
-}
+
+# Set UNIX-like aliases for the admin command, so sudo <command> will run the command with elevated rights.
+Set-Alias -Name su -Value admin
 
 # System Utilities
 function admin {
@@ -149,11 +307,6 @@ function admin {
         Start-Process wt -Verb runAs
     }
 }
-
-# Set UNIX-like aliases for the admin command, so sudo <command> will run the command with elevated rights.
-Set-Alias -Name su -Value admin
-
-# System Utilities
 function uptime {
     if ($PSVersionTable.PSVersion.Major -eq 5) {
         Get-WmiObject win32_operatingsystem | Select-Object @{Name = 'LastBootUpTime'; Expression = { $_.ConverttoDateTime($_.lastbootuptime) } } | Format-Table -HideTableHeaders
@@ -162,6 +315,9 @@ function uptime {
         net statistics workstation | Select-String "since" | ForEach-Object { $_.ToString().Replace('Statistics since ', '') }
     }
 }
+
+# Quick Access to System Information
+function sysinfo { Get-ComputerInfo }
 
 
 function unzip ($file) {
@@ -172,14 +328,14 @@ function unzip ($file) {
 
 function grep($regex, $dir) {
     if ( $dir ) {
-        Get-ChildItem $dir | select-string $regex
+        Get-ChildItem $dir | Select-String $regex
         return
     }
-    $input | select-string $regex
+    $input | Select-String $regex
 }
 
 function df {
-    get-volume
+    Get-Volume
 }
 
 function sed($file, $find, $replace) {
@@ -191,7 +347,11 @@ function which($name) {
 }
 
 function export($name, $value) {
-    set-item -force -path "env:$name" -value $value;
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        Write-Warning "Cannot export environment variable: Name is null or empty"
+        return
+    }
+    Set-Item -Force -Path "env:$name" -Value $value
 }
 
 function pkill($name) {
@@ -225,6 +385,20 @@ function docs { Set-Location -Path $HOME\Documents }
 
 function dtop { Set-Location -Path $HOME\Desktop }
 
+# Network Utilities
+function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
+
+function flushdns {
+    Clear-DnsClientCache
+    Write-Host "DNS has been flushed"
+}
+
+# Open WinUtil
+function winutil {
+    Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression
+    
+}
+
 # Quick Access to Editing the Profile
 function ep { vim $PROFILE }
 
@@ -256,15 +430,6 @@ function lazyg {
     git push
 }
 
-# Quick Access to System Information
-function sysinfo { Get-ComputerInfo }
-
-# Networking Utilities
-function flushdns {
-    Clear-DnsClientCache
-    Write-Host "DNS has been flushed"
-}
-
 # Clipboard Utilities
 function cpy { Set-Clipboard $args[0] }
 
@@ -276,65 +441,19 @@ function sha1 { Get-FileHash -Algorithm SHA1 $args }
 function sha256 { Get-FileHash -Algorithm SHA256 $args }
 
 
-# Enhanced PowerShell Experience
-Set-PSReadLineOption -Colors @{
-    Command   = 'Yellow'
-    Parameter = 'Green'
-    String    = 'DarkCyan'
+#region Final Setup
+# Display status messages
+if ($newlyInstalledModules.Count -gt 0) {
+    Write-Host "Newly installed modules: $($newlyInstalledModules -join ', ')" -ForegroundColor Green
 }
 
-$PSROptions = @{
-    ContinuationPrompt = '  '
-    Colors             = @{
-        Parameter        = $PSStyle.Foreground.Magenta
-        Selection        = $PSStyle.Background.Black
-        InLinePrediction = $PSStyle.Foreground.BrightYellow + $PSStyle.Background.BrightBlack
-    }
+# Display update notifications
+foreach ($update in $updateResults) {
+    Write-Host $update -ForegroundColor Yellow
 }
 
-if (Get-Command sfsu -ErrorAction SilentlyContinue) {
-    Invoke-Expression (&sfsu hook)
-}
 
-Set-PSReadLineOption @PSROptions
-Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
-Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
-
-
-if (Get-Command starship -ErrorAction SilentlyContinue) {
-    Invoke-Expression (&starship init powershell)
-}
-elseif (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
-}
-else {
-    Write-Host "Neither starship nor oh-my-posh is installed. Consider installing one for a better prompt experience." -ForegroundColor Yellow
-}
-
-# import modules after starship or oh-my-posh to avoid visual bugs
-
-# Import Modules and External Profiles
-# Ensure Terminal-Icons module is installed before importing
-if (Get-Module -ListAvailable -Name Terminal-Icons) {
-    Import-Module -Name Terminal-Icons
-}
-
-if (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) {
-    Import-Module -Name Microsoft.WinGet.CommandNotFound
-}
-
-# Install pscx module if not already installed - https://github.com/Pscx/Pscx
-# if (Get-Module -ListAvailable -Name Pscx) {
-#     Import-Module -Name Pscx
-# }
-# elseif (-not (Get-Module -ListAvailable -Name Pscx) -and $canConnectToGitHub ) {
-#     Install-Module -Name Pscx -Scope CurrentUser -Force -SkipPublisherCheck -AllowClobber
-#     Import-Module -Name Pscx
-# }
-
-function Add-Completions {
-    Invoke-Expression("psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl")
-}       
+   
 
 function Update-Psc {
     Invoke-Expression("psc update *")
@@ -367,65 +486,36 @@ function Clear-PSHistory {
     }
 }
 
-#region Command Line Tools Initialization
-# Initialize fnm silently if it exists
-if (Test-CommandExists fnm) {
-    fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-}
 
-
-# if zoxide not installed try to install it
-if (Test-CommandExists zoxide) {
-    Invoke-Expression (& { (zoxide init powershell | Out-String) })
-}
-else {
-    Write-Host "zoxide command not found. Attempting to install via winget..."
-    try {
-        winget install -e --id ajeetdsouza.zoxide
-        Write-Host "zoxide installed successfully. Initializing..."
-        Invoke-Expression (& { (zoxide init powershell | Out-String) })
+#region Final Setup
+function Initialize-Profile {
+    $script:PendingJobs | ForEach-Object {
+        $result = Receive-Job -Job $_.Job -Wait
+        Remove-Job $_.Job
+        
+        switch ($_.Name) {
+            "ConnectivityCheck" {
+                if ($result) {
+                    Install-RequiredTools -hasInternet $true
+                    Import-RequiredModules  # Re-import after installations
+                }
+            }
+            "UpdateCheck" {
+                if ($result) {
+                    Write-Host $result -ForegroundColor Yellow
+                }
+            }
+        }
     }
-    catch {
-        Write-Error "Failed to install zoxide. Error: $_"
-    }
-}
-
-Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
-Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
-
-
-function Set-PscDefaults {
-    $pscCommands = @(
-        "psc menu config enable_menu 0"
-    )
     
-    foreach ($command in $pscCommands) {
-        Invoke-Expression $command
-    }
+    $script:ConfigurationComplete = $true
+    Write-Host "Profile initialization complete. Use 'Show-Help' for available commands." -ForegroundColor Green
 }
 
-
-if (Get-Module -ListAvailable -Name PSCompletions) {
-    Import-Module -Name PSCompletions
-}
+# Start initialization
+Start-Job -Name "ProfileInit" -ScriptBlock ${function:Initialize-Profile} | Out-Null
 
 
-Wait-Job $moduleInstallJob, $updateCheckJob | Out-Null
-$newlyInstalledModules = Receive-Job $moduleInstallJob
-$updateResults = Receive-Job $updateCheckJob
-Remove-Job $moduleInstallJob, $updateCheckJob
-
-# Report newly installed modules
-if ($newlyInstalledModules.Count -gt 0) {
-    Write-Host "Newly installed modules: $($newlyInstalledModules -join ', ')" -ForegroundColor Green
-}
-
-if ($updateResults -contains "Profile update available") {
-    Write-Host "Profile updates are available. Run Update-Profile to apply." -ForegroundColor Yellow
-}
-if ($updateResults -contains "PowerShell update available") {
-    Write-Host "PowerShell updates are available. Run Update-PowerShell to upgrade." -ForegroundColor Yellow
-}
 
 # Help Function
 function Show-Help {
@@ -518,4 +608,3 @@ Clear-PSHistory  - Clear PowerShell History (It will search the .txt history fil
 Use 'Show-Help' to display this help message.
 "@
 }
-Write-Host "Use 'Show-Help' to display help"
