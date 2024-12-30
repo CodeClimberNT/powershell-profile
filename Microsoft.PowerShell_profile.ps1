@@ -1,18 +1,3 @@
-### PowerShell template profile 
-### Version 1.03 - Tim Sneath <tim@sneath.org>
-### From https://github.com/ChrisTitusTech/powershell-profile/blob/main/Microsoft.PowerShell_profile.ps1
-###
-### This file should be stored in $PROFILE.CurrentUserAllHosts
-### If $PROFILE.CurrentUserAllHosts doesn't exist, you can make one with the following:
-###    PS> New-Item $PROFILE.CurrentUserAllHosts -ItemType File -Force
-### This will create the file and the containing subdirectory if it doesn't already 
-###
-### As a reminder, to enable unsigned script execution of local scripts on client Windows, 
-### you need to run this line (or similar) from an elevated PowerShell prompt:
-###   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned
-### This is the default policy on Windows Server 2012 R2 and above for server Windows. For 
-### more information about execution policies, run Get-Help about_Execution_Policies.
-
 #opt-out of telemetry before doing anything, only if PowerShell is run as admin
 if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem) {
     [System.Environment]::SetEnvironmentVariable('POWERSHELL_TELEMETRY_OPTOUT', 'true', [System.EnvironmentVariableTarget]::Machine)
@@ -125,7 +110,7 @@ function Update-Profile {
 
 function touch($file) { "" | Out-File $file -Encoding ASCII }
 function ff($name) {
-    Get-ChildItem -recurse -filter "*${name}*" -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-ChildItem -Recurse -Filter "*${name}*" -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Output "$($_.directory)\$($_)"
     }
 }
@@ -172,14 +157,14 @@ function unzip ($file) {
 
 function grep($regex, $dir) {
     if ( $dir ) {
-        Get-ChildItem $dir | select-string $regex
+        Get-ChildItem $dir | Select-String $regex
         return
     }
-    $input | select-string $regex
+    $input | Select-String $regex
 }
 
 function df {
-    get-volume
+    Get-Volume
 }
 
 function sed($file, $find, $replace) {
@@ -191,7 +176,7 @@ function which($name) {
 }
 
 function export($name, $value) {
-    set-item -force -path "env:$name" -value $value;
+    Set-Item -Force -Path "env:$name" -Value $value;
 }
 
 function pkill($name) {
@@ -292,7 +277,7 @@ $PSROptions = @{
     }
 }
 
-if (Get-Command sfsu -ErrorAction SilentlyContinue) {
+if (Test-CommandExists sfsu) {
     Invoke-Expression (&sfsu hook)
 }
 
@@ -301,10 +286,10 @@ Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
 
 
-if (Get-Command starship -ErrorAction SilentlyContinue) {
+if (Test-CommandExists starship) {
     Invoke-Expression (&starship init powershell)
 }
-elseif (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
+elseif (Test-CommandExists oh-my-posh) {
     oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
 }
 else {
@@ -390,9 +375,13 @@ else {
     }
 }
 
-Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
-Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
-
+if (Test-CommandExists zoxide) {
+    Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
+    Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
+}
+else {
+    Write-Host "zoxide not found. Please install it manually."
+}
 
 function Set-PscDefaults {
     $pscCommands = @(
