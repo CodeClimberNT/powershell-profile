@@ -372,19 +372,21 @@ function Clear-PSHistory {
         # Delete the history file
         Remove-Item -Path $historyPath -Force
         Write-Host "History cleared. Changes will take effect in new sessions."
-    } else {
+    }
+    else {
         Write-Host "No history file found at the specified path."
     }
 }
 
+#region Command Line Tools Initialization
 # Initialize fnm silently if it exists
-if (Get-Command fnm -ErrorAction SilentlyContinue) {
-    Invoke-Expression (fnm env --use-on-cd --shell powershell)
+if (Test-CommandExists fnm) {
+    fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
 }
 
 
 # if zoxide not installed try to install it
-if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+if (Test-CommandExists zoxide) {
     Invoke-Expression (& { (zoxide init powershell | Out-String) })
 }
 else {
@@ -402,14 +404,27 @@ else {
 Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
 Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
 
+
+function Set-PscDefaults {
+    $pscCommands = @(
+        "psc menu config enable_menu 0"
+    )
+    
+    foreach ($command in $pscCommands) {
+        Invoke-Expression $command
+    }
+}
+
+
 if (Get-Module -ListAvailable -Name PSCompletions) {
     Import-Module -Name PSCompletions
 }
 elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
+    Write-Host "PSCompletions was not found. Installing..."
     Install-Module -Name PSCompletions -Scope CurrentUser -Force -SkipPublisherCheck
     Import-Module -Name PSCompletions
-    Write-Host "PSCompletions module installed. To use more completions, run Add-Completions"
-    Write-Host "This message will not appear again, unless you remove the module."
+    Add-Completion
+    Set-PscDefaults
 }
 
 
@@ -496,8 +511,6 @@ flushdns - Clears the DNS cache.
 cpy <text> - Copies the specified text to the clipboard.
 
 pst - Retrieves text from the clipboard.
-
-Update-Psc - Update the psc manually
 
 Update-Pyenv - Update pyenv installation
 
