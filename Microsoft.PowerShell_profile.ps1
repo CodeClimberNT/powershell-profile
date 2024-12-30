@@ -19,72 +19,67 @@ if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem) 
 }
 
 
-# Initial GitHub.com connectivity check with 1 second timeout
-$canConnectToGitHub = Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
-
-
-$ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
-if (Test-Path($ChocolateyProfile)) {
-    Import-Module "$ChocolateyProfile"
+# Initial connectivity check job
+$connectivityJob = Start-Job -ScriptBlock {
+    Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
 }
 
-# Check for Profile Updates
-function Update-Profile {
-    if (-not $global:canConnectToGitHub) {
-        Write-Host "Skipping profile update check due to GitHub.com not responding within 1 second." -ForegroundColor Yellow
-        return
+# Module installation job
+$moduleInstallJob = Start-Job -ScriptBlock {
+    $modules = @(
+        'Terminal-Icons',
+        'PSCompletions',
+        'Microsoft.WinGet.CommandNotFound'
+    )
+    
+    $newlyInstalled = @()
+    
+    foreach ($module in $modules) {
+        if (-not (Get-Module -ListAvailable -Name $module)) {
+            Install-Module -Name $module -Scope CurrentUser -Force -SkipPublisherCheck
+            $newlyInstalled += $module
+        }
+        # Import module regardless of whether it was just installed
+        Import-Module -Name $module -Force
     }
 
+    # Special handling for PSCompletions if newly installed
+    if ($newlyInstalled -contains 'PSCompletions') {
+        # Run first-time setup commands
+        Add-Completions
+        Invoke-Expression "psc menu config enable_menu 0"
+    }
+
+    # Return the list of newly installed modules
+    $newlyInstalled
+}
+
+# Updates check job
+$updateCheckJob = Start-Job -ScriptBlock {
+    # Profile update check
+    $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
     try {
-        $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
         $oldhash = Get-FileHash $PROFILE
         Invoke-RestMethod $url -OutFile "$env:temp/Microsoft.PowerShell_profile.ps1"
         $newhash = Get-FileHash "$env:temp/Microsoft.PowerShell_profile.ps1"
         if ($newhash.Hash -ne $oldhash.Hash) {
-            Copy-Item -Path "$env:temp/Microsoft.PowerShell_profile.ps1" -Destination $PROFILE -Force
-            Write-Host "Profile has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
+            Write-Output "Profile update available"
         }
-    }
-    catch {
-        Write-Error "Unable to check for `$profile updates"
-    }
-    finally {
-        Remove-Item "$env:temp/Microsoft.PowerShell_profile.ps1" -ErrorAction SilentlyContinue
-    }
-}
-# Update-Profile
-
-function Update-PowerShell {
-    if (-not $global:canConnectToGitHub) {
-        Write-Host "Skipping PowerShell update check due to GitHub.com not responding within 1 second." -ForegroundColor Yellow
-        return
-    }
-
+    } catch { }
+    
+    # PowerShell update check
     try {
-        Write-Host "Checking for PowerShell updates..." -ForegroundColor Cyan
-        $updateNeeded = $false
         $currentVersion = $PSVersionTable.PSVersion.ToString()
-        $gitHubApiUrl = "https://api.github.com/repos/PowerShell/PowerShell/releases/latest"
-        $latestReleaseInfo = Invoke-RestMethod -Uri $gitHubApiUrl
-        $latestVersion = $latestReleaseInfo.tag_name.Trim('v')
+        $latestVersion = (Invoke-RestMethod -Uri "https://api.github.com/repos/PowerShell/PowerShell/releases/latest").tag_name.Trim('v')
         if ($currentVersion -lt $latestVersion) {
-            $updateNeeded = $true
+            Write-Output "PowerShell update available"
         }
-
-        if ($updateNeeded) {
-            Write-Host "Updating PowerShell..." -ForegroundColor Yellow
-            winget upgrade "Microsoft.PowerShell" --accept-source-agreements --accept-package-agreements
-            Write-Host "PowerShell has been updated. Please restart your shell to reflect changes" -ForegroundColor Magenta
-        }
-        else {
-            Write-Host "Your PowerShell is up to date." -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-Error "Failed to update PowerShell. Error: $_"
-    }
+    } catch { }
 }
-Update-PowerShell
+
+# Wait for critical jobs
+$canConnectToGitHub = Receive-Job -Job $connectivityJob -Wait
+Remove-Job $connectivityJob
 
 
 # Admin Check and Prompt Customization
@@ -323,21 +318,11 @@ else {
 if (Get-Module -ListAvailable -Name Terminal-Icons) {
     Import-Module -Name Terminal-Icons
 }
-elseif (-not (Get-Module -ListAvailable -Name Terminal-Icons) -and $canConnectToGitHub ) {
-    Install-Module -Name Terminal-Icons -Scope CurrentUser -Force -SkipPublisherCheck
-    Import-Module -Name Terminal-Icons
-}
-
 
 if (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) {
     Import-Module -Name Microsoft.WinGet.CommandNotFound
 }
-elseif (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) -and $canConnectToGitHub ) {
-    Install-Module -Name Microsoft.WinGet.CommandNotFound -Scope CurrentUser -Force -SkipPublisherCheck
-    Import-Module -Name Microsoft.WinGet.CommandNotFound
-    Write-Host "CommandNotFound module installed. To use more completions, run Add-Completions"
-    Write-Host "This message will not appear again unless you reinstall the module."
-}
+
 # Install pscx module if not already installed - https://github.com/Pscx/Pscx
 # if (Get-Module -ListAvailable -Name Pscx) {
 #     Import-Module -Name Pscx
@@ -348,20 +333,24 @@ elseif (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) 
 # }
 
 function Add-Completions {
-    psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl
+    Invoke-Expression("psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl")
 }       
 
 function Update-Psc {
-    psc update *
+    Invoke-Expression("psc update *")
 }
 # To update the psc modules at every session uncomment the line below
 # update-psc
 
 function Update-Pyenv {
+    if (-not (Test-Path env:PYENV_HOME)) {
+        Write-Error "PYENV_HOME environment variable is not set"
+        return
+    }
     Invoke-Expression(& { "${env:PYENV_HOME}\install-pyenv-win.ps1" })
 }
 # To update the pyenv at every session uncomment the line below
-# update-pyenv
+# Update-Pyenv
 
 function Clear-PSHistory {
     # Get the path of the PSReadline history file
@@ -419,14 +408,24 @@ function Set-PscDefaults {
 if (Get-Module -ListAvailable -Name PSCompletions) {
     Import-Module -Name PSCompletions
 }
-elseif (-not (Get-Module -ListAvailable -Name PSCompletions) -and $canConnectToGitHub ) {
-    Write-Host "PSCompletions was not found. Installing..."
-    Install-Module -Name PSCompletions -Scope CurrentUser -Force -SkipPublisherCheck
-    Import-Module -Name PSCompletions
-    Add-Completion
-    Set-PscDefaults
+
+
+Wait-Job $moduleInstallJob, $updateCheckJob | Out-Null
+$newlyInstalledModules = Receive-Job $moduleInstallJob
+$updateResults = Receive-Job $updateCheckJob
+Remove-Job $moduleInstallJob, $updateCheckJob
+
+# Report newly installed modules
+if ($newlyInstalledModules.Count -gt 0) {
+    Write-Host "Newly installed modules: $($newlyInstalledModules -join ', ')" -ForegroundColor Green
 }
 
+if ($updateResults -contains "Profile update available") {
+    Write-Host "Profile updates are available. Run Update-Profile to apply." -ForegroundColor Yellow
+}
+if ($updateResults -contains "PowerShell update available") {
+    Write-Host "PowerShell updates are available. Run Update-PowerShell to upgrade." -ForegroundColor Yellow
+}
 
 # Help Function
 function Show-Help {
