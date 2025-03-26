@@ -97,7 +97,7 @@ Set-Alias -Name n -Value notepad
 
 $FETCH = if (Test-CommandExists neofetch) { 'neofetch' }
 elseif (Test-CommandExists fastfetch) { 'fastfetch' }
-Set-Alias -Name neofetch -Value $FETCH
+if ($FETCH) { Set-Alias -Name fetch -Value $FETCH }
 
 
 function Edit-Profile {
