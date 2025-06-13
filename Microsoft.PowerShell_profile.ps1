@@ -50,7 +50,8 @@ $updateCheckJob = Start-Job -ScriptBlock {
         if ($newhash.Hash -ne $oldhash.Hash) {
             Write-Output "Profile update available"
         }
-    } catch { }
+    }
+    catch { }
     
     # PowerShell update check
     try {
@@ -59,8 +60,11 @@ $updateCheckJob = Start-Job -ScriptBlock {
         if ($currentVersion -lt $latestVersion) {
             Write-Output "PowerShell update available"
         }
-    } catch { }
+    }
+    catch { }
 }
+
+
 
 # Wait for critical jobs
 $canConnectToGitHub = Receive-Job -Job $connectivityJob -Wait
@@ -286,6 +290,7 @@ Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
 
 
+
 if (Test-CommandExists starship) {
     Invoke-Expression (&starship init powershell)
 }
@@ -295,6 +300,8 @@ elseif (Test-CommandExists oh-my-posh) {
 else {
     Write-Host "Neither starship nor oh-my-posh is installed. Consider installing one for a better prompt experience." -ForegroundColor Yellow
 }
+
+
 
 # import modules after starship or oh-my-posh to avoid visual bugs
 
@@ -318,7 +325,7 @@ if (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) {
 # }
 
 function Add-Completions {
-    Invoke-Expression("psc add arch basenc cargo choco date dd df du docker env factor fnm git head pip powershell python pdm scoop sfsu winget wt wsl")
+    Invoke-Expression("psc add cargo choco docker fnm git pip powershell scoop sfsu winget wsl")
 }       
 
 function Update-Psc {
@@ -327,15 +334,6 @@ function Update-Psc {
 # To update the psc modules at every session uncomment the line below
 # update-psc
 
-function Update-Pyenv {
-    if (-not (Test-Path env:PYENV_HOME)) {
-        Write-Error "PYENV_HOME environment variable is not set"
-        return
-    }
-    Invoke-Expression(& { "${env:PYENV_HOME}\install-pyenv-win.ps1" })
-}
-# To update the pyenv at every session uncomment the line below
-# Update-Pyenv
 
 function Clear-PSHistory {
     # Get the path of the PSReadline history file
@@ -415,6 +413,8 @@ if ($updateResults -contains "Profile update available") {
 if ($updateResults -contains "PowerShell update available") {
     Write-Host "PowerShell updates are available. Run Update-PowerShell to upgrade." -ForegroundColor Yellow
 }
+
+
 
 # Help Function
 function Show-Help {
@@ -500,11 +500,14 @@ cpy <text> - Copies the specified text to the clipboard.
 
 pst - Retrieves text from the clipboard.
 
-Update-Pyenv - Update pyenv installation
-
 Clear-PSHistory  - Clear PowerShell History (It will search the .txt history file and delete it)
 
 Use 'Show-Help' to display this help message.
 "@
 }
 Write-Host "Use 'Show-Help' to display help"
+
+#f45873b3-b655-43a6-b217-97c00aa0db58 PowerToys CommandNotFound module
+
+Import-Module -Name Microsoft.WinGet.CommandNotFound
+#f45873b3-b655-43a6-b217-97c00aa0db58
