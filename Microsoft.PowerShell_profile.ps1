@@ -3,73 +3,118 @@ if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsSystem) 
     [System.Environment]::SetEnvironmentVariable('POWERSHELL_TELEMETRY_OPTOUT', 'true', [System.EnvironmentVariableTarget]::Machine)
 }
 
+$modules = @(
+    'Terminal-Icons',
+    # 'PSCompletions',
+    'Microsoft.WinGet.CommandNotFound'
+)
 
-# Initial connectivity check job
-$connectivityJob = Start-Job -ScriptBlock {
-    Test-Connection github.com -Count 1 -Quiet -TimeoutSeconds 1
+# Utility Functions (moved up for use in jobs)
+function Test-CommandExists {
+    param($command)
+    $exists = $null -ne (Get-Command $command -ErrorAction SilentlyContinue)
+    return $exists
 }
 
-# Module installation job
-$moduleInstallJob = Start-Job -ScriptBlock {
-    $modules = @(
-        'Terminal-Icons',
-        'PSCompletions',
-        'Microsoft.WinGet.CommandNotFound'
-    )
-    
-    $newlyInstalled = @()
-    
-    foreach ($module in $modules) {
-        if (-not (Get-Module -ListAvailable -Name $module)) {
-            Install-Module -Name $module -Scope CurrentUser -Force -SkipPublisherCheck
-            $newlyInstalled += $module
-        }
-        # Import module regardless of whether it was just installed
-        Import-Module -Name $module -Force
-    }
+# Skip connectivity check for instant startup - assume connected
+$canConnectToGitHub = $true
 
-    # Special handling for PSCompletions if newly installed
-    if ($newlyInstalled -contains 'PSCompletions') {
-        # Run first-time setup commands
-        Add-Completions
-        Invoke-Expression "psc menu config enable_menu 0"
-    }
-
-    # Return the list of newly installed modules
-    $newlyInstalled
+# Background maintenance (runs after profile loads)
+$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+    # Clean up any background jobs on exit
+    Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue
 }
 
-# Updates check job
-$updateCheckJob = Start-Job -ScriptBlock {
-    # Profile update check
-    $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
-    try {
-        $oldhash = Get-FileHash $PROFILE
-        Invoke-RestMethod $url -OutFile "$env:temp/Microsoft.PowerShell_profile.ps1"
-        $newhash = Get-FileHash "$env:temp/Microsoft.PowerShell_profile.ps1"
-        if ($newhash.Hash -ne $oldhash.Hash) {
-            Write-Output "Profile update available"
+# Background module installation and updates (completely silent)
+if ($canConnectToGitHub) {
+    $null = Start-Job -Name "ProfileMaintenance" -ArgumentList $modules -ScriptBlock {
+        param($moduleList)
+        $installed = @()
+        
+        # Install missing modules
+        foreach ($module in $moduleList) {
+            if (-not (Get-Module -ListAvailable -Name $module)) {
+                try {
+                    Install-Module -Name $module -Scope CurrentUser -Force -SkipPublisherCheck -ErrorAction Stop
+                    $installed += $module
+                }
+                catch {
+                    # Silent fail
+                }
+            }
         }
+        # Configure PSCompletions if newly installed
+        if ($installed -contains 'PSCompletions') {
+            try {
+                Import-Module -Name PSCompletions -Force
+                if (Get-Command psc -ErrorAction SilentlyContinue) {
+                    psc add cargo checo docker fnm git pip powershell scoop sfsu winget wsl
+                    psc menu config enable_menu 0
+                }
+            }
+            catch {
+                # Silent fail
+            }
+        }
+        
+        return $installed
     }
-    catch { }
     
-    # PowerShell update check
-    try {
-        $currentVersion = $PSVersionTable.PSVersion.ToString()
-        $latestVersion = (Invoke-RestMethod -Uri "https://api.github.com/repos/PowerShell/PowerShell/releases/latest").tag_name.Trim('v')
-        if ($currentVersion -lt $latestVersion) {
-            Write-Output "PowerShell update available"
+    # Install zoxide if missing
+    if (-not (Test-CommandExists zoxide)) {
+        $null = Start-Job -Name "ZoxideInstall" -ScriptBlock {
+            try {
+                winget install -e --id ajeetdsouza.zoxide --silent
+            }
+            catch {
+                # Silent fail
+            }
         }
     }
-    catch { }
 }
 
-
-
-# Wait for critical jobs
-$canConnectToGitHub = Receive-Job -Job $connectivityJob -Wait
-Remove-Job $connectivityJob
-
+# Background updates check (completely silent)
+if ($canConnectToGitHub) {
+    $null = Start-Job -Name "UpdateCheck" -ArgumentList $PROFILE -ScriptBlock {
+        param($ProfilePath)
+        $results = @()
+        
+        # Profile update check
+        try {
+            if ($ProfilePath -and (Test-Path $ProfilePath)) {
+                $url = "https://raw.githubusercontent.com/CodeClimberNT/powershell-profile/refs/heads/main/Microsoft.PowerShell_profile.ps1"
+                $oldhash = Get-FileHash $ProfilePath
+                $tempPath = Join-Path $env:TEMP "Microsoft.PowerShell_profile.ps1"
+                Invoke-RestMethod $url -OutFile $tempPath -TimeoutSec 10
+                $newhash = Get-FileHash $tempPath
+                if ($newhash.Hash -ne $oldhash.Hash) {
+                    $results += "Profile update available"
+                }
+                # Clean up temp file
+                if (Test-Path $tempPath) {
+                    Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        catch {
+            # Silent fail - don't block startup
+        }
+        
+        # PowerShell update check
+        try {
+            $currentVersion = $PSVersionTable.PSVersion.ToString()
+            $latestVersion = (Invoke-RestMethod -Uri "https://api.github.com/repos/PowerShell/PowerShell/releases/latest" -TimeoutSec 10).tag_name.Trim('v')
+            if ($currentVersion -lt $latestVersion) {
+                $results += "PowerShell update available"
+            }
+        }
+        catch {
+            # Silent fail - don't block startup
+        }
+        
+        return $results
+    }
+}
 
 # Admin Check and Prompt Customization
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -78,14 +123,6 @@ function prompt {
 }
 $adminSuffix = if ($isAdmin) { " [ADMIN]" } else { "" }
 $Host.UI.RawUI.WindowTitle = "PowerShell {0}$adminSuffix" -f $PSVersionTable.PSVersion.ToString()
-
-
-# Utility Functions
-function Test-CommandExists {
-    param($command)
-    $exists = $null -ne (Get-Command $command -ErrorAction SilentlyContinue)
-    return $exists
-}
 
 # Editor Configuration
 $EDITOR = if (Test-CommandExists nvim) { 'nvim' }
@@ -103,7 +140,6 @@ $FETCH = if (Test-CommandExists neofetch) { 'neofetch' }
 elseif (Test-CommandExists fastfetch) { 'fastfetch' }
 if ($FETCH) { Set-Alias -Name fetch -Value $FETCH }
 
-
 function Edit-Profile {
     vim $PROFILE
 }
@@ -120,12 +156,27 @@ function ff($name) {
 }
 
 # Network Utilities
-function Get-PubIP { (Invoke-WebRequest http://ifconfig.me/ip).Content }
+function Get-PubIP { 
+    if ($canConnectToGitHub) {
+        try {
+            (Invoke-WebRequest http://ifconfig.me/ip -TimeoutSec 5).Content
+        }
+        catch {
+            Write-Warning "Failed to get public IP: $_"
+        }
+    }
+    else {
+        Write-Warning "No internet connectivity detected"
+    }
+}
 
 # Open WinUtil
 function winutil {
-    Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression
-    
+    if ($canConnectToGitHub) {
+        try { Invoke-WebRequest -useb https://christitus.com/win | Invoke-Expression }
+        catch { Write-Warning "Failed to run WinUtil" }
+    }
+    else { Write-Warning "No internet connectivity" }
 }
 
 # System Utilities
@@ -151,7 +202,6 @@ function uptime {
         net statistics workstation | Select-String "since" | ForEach-Object { $_.ToString().Replace('Statistics since ', '') }
     }
 }
-
 
 function unzip ($file) {
     Write-Output("Extracting", $file, "to", $pwd)
@@ -264,7 +314,6 @@ function md5 { Get-FileHash -Algorithm MD5 $args }
 function sha1 { Get-FileHash -Algorithm SHA1 $args }
 function sha256 { Get-FileHash -Algorithm SHA256 $args }
 
-
 # Enhanced PowerShell Experience
 Set-PSReadLineOption -Colors @{
     Command   = 'Yellow'
@@ -281,59 +330,62 @@ $PSROptions = @{
     }
 }
 
-if (Test-CommandExists sfsu) {
-    Invoke-Expression (&sfsu hook)
-}
-
 Set-PSReadLineOption @PSROptions
 Set-PSReadLineKeyHandler -Chord 'Ctrl+f' -Function ForwardWord
 Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
 
-
-
+# Initialize prompt tools immediately (but optimized)
 if (Test-CommandExists starship) {
     Invoke-Expression (&starship init powershell)
 }
 elseif (Test-CommandExists oh-my-posh) {
     oh-my-posh init pwsh --config "https://raw.githubusercontent.com/CodeClimberNT/oh-my-posh/main/powerlevel10k_rainbow.omp.json" | Invoke-Expression
 }
-else {
-    Write-Host "Neither starship nor oh-my-posh is installed. Consider installing one for a better prompt experience." -ForegroundColor Yellow
+
+# Initialize essential tools
+if (Test-CommandExists zoxide) {
+    try {
+        Invoke-Expression (& { (zoxide init powershell | Out-String) })
+        Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
+        Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
+    }
+    catch {
+        # Silent fail for speed
+    }
 }
 
-
-
-# import modules after starship or oh-my-posh to avoid visual bugs
-
-# Import Modules and External Profiles
-# Ensure Terminal-Icons module is installed before importing
-if (Get-Module -ListAvailable -Name Terminal-Icons) {
-    Import-Module -Name Terminal-Icons
+if (Test-CommandExists sfsu) {
+    Invoke-Expression (&sfsu hook)
 }
 
-if (Get-Module -ListAvailable -Name Microsoft.WinGet.CommandNotFound) {
-    Import-Module -Name Microsoft.WinGet.CommandNotFound
+if (Test-CommandExists fnm) {
+    fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
 }
 
-# Install pscx module if not already installed - https://github.com/Pscx/Pscx
-# if (Get-Module -ListAvailable -Name Pscx) {
-#     Import-Module -Name Pscx
+#rgb(232, 8, 46) PSCompletions functions (commented out - uncomment to use)
+# function Add-Completions {
+#     if (Get-Command psc -ErrorAction SilentlyContinue) {
+#         Invoke-Expression("psc add cargo choco docker fnm git pip powershell scoop sfsu winget wsl")
+#     }
+# }       
+
+# function Update-Psc {
+#     if (Get-Command psc -ErrorAction SilentlyContinue) {
+#         Invoke-Expression("psc update *")
+#     }
 # }
-# elseif (-not (Get-Module -ListAvailable -Name Pscx) -and $canConnectToGitHub ) {
-#     Install-Module -Name Pscx -Scope CurrentUser -Force -SkipPublisherCheck -AllowClobber
-#     Import-Module -Name Pscx
+
+# function Set-PscDefaults {
+#     if (Get-Command psc -ErrorAction SilentlyContinue) {
+#         $pscCommands = @(
+#             "psc menu config enable_menu 0"
+#         )
+        
+#         foreach ($command in $pscCommands) {
+#             Invoke-Expression $command
+#         }
+#     }
 # }
-
-function Add-Completions {
-    Invoke-Expression("psc add cargo choco docker fnm git pip powershell scoop sfsu winget wsl")
-}       
-
-function Update-Psc {
-    Invoke-Expression("psc update *")
-}
-# To update the psc modules at every session uncomment the line below
-# update-psc
-
 
 function Clear-PSHistory {
     # Get the path of the PSReadline history file
@@ -350,70 +402,87 @@ function Clear-PSHistory {
     }
 }
 
-#region Command Line Tools Initialization
-# Initialize fnm silently if it exists
-if (Test-CommandExists fnm) {
-    fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
-}
-
-
-# if zoxide not installed try to install it
-if (Test-CommandExists zoxide) {
-    Invoke-Expression (& { (zoxide init powershell | Out-String) })
-}
-else {
-    Write-Host "zoxide command not found. Attempting to install via winget..."
-    try {
-        winget install -e --id ajeetdsouza.zoxide
-        Write-Host "zoxide installed successfully. Initializing..."
-        Invoke-Expression (& { (zoxide init powershell | Out-String) })
-    }
-    catch {
-        Write-Error "Failed to install zoxide. Error: $_"
+# Import essential modules at startup (optimized with better error handling)
+foreach ($module in $modules) {
+    if (Get-Module -ListAvailable -Name $module) {
+        try {
+            Import-Module -Name $module -Force -ErrorAction Stop
+        }
+        catch {
+            # Silent fail for specific problematic modules
+            if ($module -eq 'Microsoft.WinGet.CommandNotFound') {
+                # This module sometimes has dependency issues - skip silently
+                continue
+            }
+            # For other modules, continue silently but could log if needed
+        }
     }
 }
 
-if (Test-CommandExists zoxide) {
-    Set-Alias -Name z -Value __zoxide_z -Option AllScope -Scope Global -Force
-    Set-Alias -Name zi -Value __zoxide_zi -Option AllScope -Scope Global -Force
-}
-else {
-    Write-Host "zoxide not found. Please install it manually."
+# Additional module management functions
+function Import-ProfileModules {
+    Write-Host "Re-importing profile modules..." -ForegroundColor Yellow
+    foreach ($module in $script:modules) {
+        if (Get-Module -ListAvailable -Name $module) {
+            try {
+                Import-Module -Name $module -Force
+                Write-Host "Imported: $module" -ForegroundColor Green
+            }
+            catch {
+                Write-Warning "Failed to import $module`: $($_.Exception.Message)"
+                # Try alternative import for WinGet module
+                if ($module -eq 'Microsoft.WinGet.CommandNotFound') {
+                    try {
+                        Import-Module -Name $module -Force -SkipEditionCheck
+                        Write-Host "Imported: $module (with SkipEditionCheck)" -ForegroundColor Green
+                    }
+                    catch {
+                        Write-Host "$module failed to import - may have dependency issues" -ForegroundColor Red
+                    }
+                }
+            }
+        }
+        else {
+            Write-Host "$module not available" -ForegroundColor Yellow
+        }
+    }
 }
 
-function Set-PscDefaults {
-    $pscCommands = @(
-        "psc menu config enable_menu 0"
-    )
+# Function to check background job results (call manually when needed)
+function Get-BackgroundUpdates {
+    $jobs = Get-Job -Name "UpdateCheck", "ProfileMaintenance", "ZoxideInstall" -ErrorAction SilentlyContinue
     
-    foreach ($command in $pscCommands) {
-        Invoke-Expression $command
+    foreach ($job in $jobs) {
+        if ($job.State -eq 'Completed') {
+            $result = Receive-Job $job
+            
+            switch ($job.Name) {
+                "UpdateCheck" {
+                    if ($result -contains "Profile update available") {
+                        Write-Host "Profile updates are available. Run Update-Profile to apply." -ForegroundColor Yellow
+                    }
+                    if ($result -contains "PowerShell update available") {
+                        Write-Host "PowerShell updates are available. Consider updating PowerShell." -ForegroundColor Yellow
+                    }
+                }
+                "ProfileMaintenance" {
+                    if ($result -and $result.Count -gt 0) {
+                        Write-Host "Newly installed modules: $($result -join ', ')" -ForegroundColor Green
+                    }
+                }
+                "ZoxideInstall" {
+                    if ($result) {
+                        Write-Host "Zoxide installed successfully. Restart PowerShell to use it." -ForegroundColor Green
+                    }
+                }
+            }
+            Remove-Job $job -Force
+        }
+        elseif ($job.State -eq 'Failed') {
+            Remove-Job $job -Force
+        }
     }
 }
-
-
-if (Get-Module -ListAvailable -Name PSCompletions) {
-    Import-Module -Name PSCompletions
-}
-
-
-Wait-Job $moduleInstallJob, $updateCheckJob | Out-Null
-$newlyInstalledModules = Receive-Job $moduleInstallJob
-$updateResults = Receive-Job $updateCheckJob
-Remove-Job $moduleInstallJob, $updateCheckJob
-
-# Report newly installed modules
-if ($newlyInstalledModules.Count -gt 0) {
-    Write-Host "Newly installed modules: $($newlyInstalledModules -join ', ')" -ForegroundColor Green
-}
-
-if ($updateResults -contains "Profile update available") {
-    Write-Host "Profile updates are available. Run Update-Profile to apply." -ForegroundColor Yellow
-}
-if ($updateResults -contains "PowerShell update available") {
-    Write-Host "PowerShell updates are available. Run Update-PowerShell to upgrade." -ForegroundColor Yellow
-}
-
 
 
 # Help Function
@@ -422,9 +491,9 @@ function Show-Help {
 PowerShell Profile Help
 =======================
 
-Update-Profile - Checks for profile updates from a remote repository and updates if necessary.
+Update-Profile - Reloads the current PowerShell profile.
 
-Update-PowerShell - Checks for the latest PowerShell release and updates if a new version is available.
+Get-BackgroundUpdates - Check status of background jobs (module installs, updates).
 
 Edit-Profile - Opens the current user's profile for editing using the configured editor.
 
@@ -505,9 +574,13 @@ Clear-PSHistory  - Clear PowerShell History (It will search the .txt history fil
 Use 'Show-Help' to display this help message.
 "@
 }
-Write-Host "Use 'Show-Help' to display help"
 
-#f45873b3-b655-43a6-b217-97c00aa0db58 PowerToys CommandNotFound module
+# Profile loaded - use 'Show-Help', 'Import-ProfileModules', or 'Initialize-AllTools' as needed
 
-Import-Module -Name Microsoft.WinGet.CommandNotFound
-#f45873b3-b655-43a6-b217-97c00aa0db58
+Write-Host "Profile loaded - use '" -NoNewline
+Write-Host "Show-Help" -ForegroundColor Cyan -NoNewline
+Write-Host "', '" -NoNewline
+Write-Host "Import-ProfileModules" -ForegroundColor Magenta -NoNewline
+Write-Host "', or '" -NoNewline
+Write-Host "Get-BackgroundUpdates" -ForegroundColor Green -NoNewline
+Write-Host "' as needed"
