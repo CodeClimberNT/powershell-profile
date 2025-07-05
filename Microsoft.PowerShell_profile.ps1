@@ -17,10 +17,11 @@ $Host.UI.RawUI.WindowTitle = "PowerShell {0}$adminSuffix" -f $PSVersionTable.PSV
 $EDITOR = 'code'
 Set-Alias -Name vim -Value $EDITOR
 Set-Alias -Name n -Value notepad
-Set-Alias -Name fetch -Value fastfetch
+Set-Alias -Name neofetch -Value fastfetch
+Set-Alias -Name cat -Value bat
 
 function Edit-Profile {
-    nvim $PROFILE
+    & $EDITOR $PROFILE
 }
 
 function Update-Profile {
