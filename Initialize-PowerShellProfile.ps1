@@ -1,7 +1,7 @@
-# High-Performance PowerShell Profile Initialization Script
-# This script installs all required modules and tools for maximum performance
+# PowerShell Profile Initialization Script
+# This script installs all required modules and tools
 
-Write-Host "Initializing High-Performance PowerShell Profile..." -ForegroundColor Cyan
+Write-Host "Initializing PowerShell Profile..." -ForegroundColor Cyan
 
 # Required PowerShell Modules
 $modules = @(
